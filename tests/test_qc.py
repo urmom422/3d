@@ -162,7 +162,7 @@ class _FakeSlicer:
         return self.calls[-1][1].get("cwd")
 
 
-def _slice_report(monkeypatch, good, work_dir: Path, fake: _FakeSlicer):
+def _slice_report(monkeypatch, good, work_dir: Path, fake: _FakeSlicer, **kwargs):
     """Run a full QC with ``fake`` standing in for OrcaSlicer."""
     trace, solids, mf3, stl, _out = good
     monkeypatch.setattr(qc.subprocess, "run", fake)
@@ -174,7 +174,39 @@ def _slice_report(monkeypatch, good, work_dir: Path, fake: _FakeSlicer):
         work_dir,
         run_level2=True,
         slicer_exe=_fake_exe(work_dir),
+        **kwargs,
     )
+
+
+class _TimeoutSlicer:
+    """Stands in for ``subprocess.run``; raises ``TimeoutExpired``.
+
+    ``writes`` (if given) is applied *before* the timeout is raised -- a
+    stand-in for a slicer that had already finished writing its export by
+    the time it got killed for exceeding the timeout.
+    """
+
+    def __init__(self, writes=None):
+        self.writes = writes
+        self.calls: list[tuple[list[str], dict]] = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((list(argv), dict(kwargs)))
+        if self.writes is not None:
+            self.writes(Path(argv[argv.index("--export-3mf") + 1]))
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout"))
+
+
+class _RaisingSlicer:
+    """Stands in for ``subprocess.run``; raises an arbitrary exception."""
+
+    def __init__(self, exc: Exception):
+        self.exc = exc
+        self.calls: list[tuple[list[str], dict]] = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((list(argv), dict(kwargs)))
+        raise self.exc
 
 
 def _slice_check(report):
@@ -861,6 +893,98 @@ def test_the_slicer_is_started_in_the_work_dir(monkeypatch, good, tmp_path):
     argv = fake.calls[-1][0]
     assert "--outputdir" not in argv  # export path is exact, never a dir
     assert argv[argv.index("--export-3mf") + 1].endswith(".gcode.3mf")
+
+
+# --- level 2: a timeout does not override the artifact gates (fix A) ------
+
+
+def test_timeout_with_a_good_artifact_still_passes_with_a_warning(
+    monkeypatch, good, tmp_path
+):
+    """The process is killed/reaped by subprocess.run's own timeout, but if
+    it had already written a good export by then, the slice still counts."""
+    fake = _TimeoutSlicer(writes=_write_gcode_3mf)
+    report = _slice_report(monkeypatch, good, tmp_path, fake, slice_timeout_s=5.0)
+
+    check = _slice_check(report)
+    assert check.passed is True, check.message
+    assert report.verdict == "print-ready"
+    assert any(
+        "exceeded the 5s timeout" in w and "judged from the artifact" in w
+        for w in report.warnings
+    ), report.warnings
+
+
+def test_timeout_with_no_artifact_fails_with_the_timeout_noted(
+    monkeypatch, good, tmp_path
+):
+    fake = _TimeoutSlicer(writes=None)
+    report = _slice_report(monkeypatch, good, tmp_path, fake, slice_timeout_s=5.0)
+
+    check = _slice_check(report)
+    assert check.passed is False
+    assert "No .gcode.3mf was produced" in check.message
+    assert "exceeded the 5s timeout" in check.message
+    assert report.verdict == "failed"
+    assert any("exceeded the 5s timeout" in w for w in report.warnings)
+
+
+# --- level 2: paths are absolutized before the slicer sees them (fix B) ----
+
+
+def test_a_relative_work_dir_still_produces_absolute_argv(monkeypatch, good, tmp_path):
+    """A relative work_dir must not desync Python's view of the artifact
+    from the slicer's own (cwd=work_dir) view of the paths it was given."""
+    trace, solids, mf3, stl, _out = good
+    monkeypatch.chdir(tmp_path)
+    rel_work_dir = Path("relwork")
+    (tmp_path / "relwork").mkdir()
+    fake = _FakeSlicer(writes=_write_gcode_3mf)
+    monkeypatch.setattr(qc.subprocess, "run", fake)
+
+    report = run_qc(
+        trace,
+        solids,
+        mf3,
+        stl,
+        rel_work_dir,
+        run_level2=True,
+        slicer_exe=_fake_exe(tmp_path / "relwork"),
+    )
+
+    argv = fake.calls[-1][0]
+    settings, filaments = (
+        argv[argv.index("--load-settings") + 1],
+        argv[argv.index("--load-filaments") + 1],
+    )
+    for part in settings.split(";") + [filaments]:
+        assert Path(part).is_absolute(), part
+    export_path = Path(argv[argv.index("--export-3mf") + 1])
+    input_path = Path(argv[-1])
+    assert export_path.is_absolute(), export_path
+    assert input_path.is_absolute(), input_path
+
+    check = _slice_check(report)
+    assert check.passed is True, check.message
+
+
+# --- level 2: a slicer that can't even launch fails cleanly (fix C) --------
+
+
+def test_a_slicer_launch_oserror_fails_cleanly_with_the_error_text(
+    monkeypatch, good, tmp_path
+):
+    """WinError 193 and friends: the exe passed is_file() validation but
+    is not actually executable. Must not escape run_qc as a traceback."""
+    fake = _RaisingSlicer(OSError(193, "%1 is not a valid Win32 application"))
+    report = _slice_report(monkeypatch, good, tmp_path, fake)
+
+    assert report.verdict == "failed"
+    check = _slice_check(report)
+    assert check.passed is False
+    assert "not a valid Win32 application" in check.message
+    assert report.slicer is not None
+    assert "not a valid Win32 application" in (report.slicer.stderr_excerpt or "")
 
 
 def test_print_time_parsing_keeps_the_day_component():

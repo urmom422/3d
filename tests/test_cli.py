@@ -236,6 +236,53 @@ def test_non_positive_numeric_flags_exit_2_with_no_traceback(
     assert not designs_root.exists()
 
 
+@pytest.mark.parametrize("flag", ["--size", "--thickness", "--hole-diameter"])
+@pytest.mark.parametrize("bad_value", ["inf", "-inf", "nan"])
+def test_non_finite_numeric_flags_exit_2_with_no_traceback(
+    sample_image, tmp_path, capsys, flag, bad_value
+):
+    designs_root = tmp_path / "designs"
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                str(sample_image),
+                "--type",
+                "keychain",
+                "--no-slice",
+                flag,
+                bad_value,
+                "--designs-root",
+                str(designs_root),
+            ]
+        )
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert not designs_root.exists()
+
+
+def test_hole_position_inf_exits_2_with_no_traceback(sample_image, tmp_path, capsys):
+    designs_root = tmp_path / "designs"
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                str(sample_image),
+                "--type",
+                "keychain",
+                "--no-slice",
+                "--hole-position",
+                "inf",
+                "0",
+                "--designs-root",
+                str(designs_root),
+            ]
+        )
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert not designs_root.exists()
+
+
 def test_size_zero_bad_float_string_also_exits_2(sample_image, tmp_path, capsys):
     designs_root = tmp_path / "designs"
     with pytest.raises(SystemExit) as caught:

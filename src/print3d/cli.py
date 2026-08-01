@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import math
 import shutil
 import sys
 import unicodedata
@@ -156,6 +157,15 @@ class BuiltDesign:
 #: flags, the build, and the export, all owned by the entry. ``--type``
 #: is resolved by looking a name up here -- never by branching on the
 #: flag's value -- so adding an object type is one new entry.
+#:
+#: Honest caveat: QC (:mod:`print3d.qc`) is keychain-specific in v1 --
+#: it reads a builder's output through the ``spec``/``solids`` shape
+#: :class:`BuiltDesign` documents, but its checks (hole diameter, wall
+#: thickness measured off a base+detail footprint, ...) assume a
+#: keychain's geometry. A future object type needs a type-aware QC route
+#: of its own in addition to its registry entry here -- this registry is
+#: the CLI's dispatch seam, not yet a full plugin system that also
+#: generalises QC.
 REGISTRY: dict[str, Callable[[BuildRequest], BuiltDesign]] = {}
 
 
@@ -259,13 +269,34 @@ def _positive_float(raw: str) -> float:
     on a bare ``ValueError`` there, printing a raw traceback. Rejecting it
     here instead turns it into argparse's own usual, traceback-free
     ``SystemExit(2)`` with a message naming the flag and the bad value.
+
+    ``inf``/``nan`` are rejected too (``math.isfinite``): ``float("inf")``
+    parses cleanly and is ``> 0``, so it would otherwise sail through this
+    check and reach the geometry stages, which do not expect a
+    non-finite dimension.
     """
     try:
         value = float(raw)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"invalid float value: '{raw}'") from exc
-    if not value > 0:
-        raise argparse.ArgumentTypeError(f"must be a positive number, got '{raw}'")
+    if not math.isfinite(value) or not value > 0:
+        raise argparse.ArgumentTypeError(
+            f"must be a positive, finite number, got '{raw}'"
+        )
+    return value
+
+
+def _finite_float(raw: str) -> float:
+    """An ``argparse`` ``type=`` for flags that accept any real number but
+    ``inf``/``nan`` (unlike :func:`_positive_float`, negative and zero are
+    legal here -- a hole position is a coordinate, not a size).
+    """
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid float value: '{raw}'") from exc
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"must be a finite number, got '{raw}'")
     return value
 
 
@@ -515,7 +546,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--hole-position",
-        type=float,
+        type=_finite_float,
         nargs=2,
         metavar=("X", "Y"),
         default=None,

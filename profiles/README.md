@@ -59,8 +59,10 @@ if that happens.
 
 ## Working headless CLI invocation
 
-Confirmed working template (PowerShell / cmd.exe), using the profiles in
-this folder by path (see Windows caveat below for how to judge success):
+Confirmed working template (**cmd.exe only** — the `^` line continuation
+below is cmd syntax and breaks in PowerShell; see the PowerShell note
+right after), using the profiles in this folder by path (see Windows
+caveat below for how to judge success):
 
 ```
 "<ORCASLICER_EXE>" ^
@@ -71,7 +73,16 @@ this folder by path (see Windows caveat below for how to judge success):
   "<INPUT_STL_OR_3MF>"
 ```
 
-Notes on the flags:
+**PowerShell note:** a quoted exe path is not a command by itself in
+PowerShell — prefix it with `&` (the call operator), and drop the `^`
+continuations in favor of a backtick (`` ` ``) or just one line. The same
+invocation, single-line and PowerShell-safe:
+
+```
+& "<ORCASLICER_EXE>" --load-settings "<REPO>\profiles\Bambu Lab A1 mini 0.4 nozzle.json;<REPO>\profiles\0.20mm Standard @BBL A1M.json" --load-filaments "<REPO>\profiles\Bambu PLA Basic @BBL A1M.json" --slice 0 --export-3mf "<OUTPUT_DIR>\<name>.gcode.3mf" "<INPUT_STL_OR_3MF>"
+```
+
+Notes on the flags (same flags either way; only the shell syntax differs):
 
 - `--load-settings` takes **both** the machine and process JSON, joined
   with `;`, in one argument.

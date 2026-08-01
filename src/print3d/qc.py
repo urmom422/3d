@@ -455,19 +455,30 @@ def _run_level2(
             "never 'print-ready' without a real slice.",
         )
 
+    # Absolutized so a relative work_dir (e.g. from a relative
+    # --designs-root) can't desync from itself: the slicer resolves any
+    # relative argv path against *its own* cwd (cwd=work_dir below), while
+    # Python stats them against *ours*. Left relative, that split produces
+    # false failures (or worse, a false pass against the wrong file).
+    work_dir = Path(work_dir).resolve()
+    exported_stl = Path(exported_stl).resolve()
+
     work_dir.mkdir(parents=True, exist_ok=True)
-    out_path = work_dir / f"{exported_stl.stem}.gcode.3mf"
+    out_path = (work_dir / f"{exported_stl.stem}.gcode.3mf").resolve()
     # Delete any artifact left behind by an earlier run *before* slicing.
     # Both success gates below are measurements of this file, and a stale
     # one satisfies both no matter what the slicer does this time -- which
     # is how a failing slice gets reported as "print-ready".
     out_path.unlink(missing_ok=True)
+    machine_profile = _MACHINE_PROFILE.resolve()
+    process_profile = _PROCESS_PROFILE.resolve()
+    filament_profile = _FILAMENT_PROFILE.resolve()
     argv = [
         str(exe),
         "--load-settings",
-        f"{_MACHINE_PROFILE};{_PROCESS_PROFILE}",
+        f"{machine_profile};{process_profile}",
         "--load-filaments",
-        str(_FILAMENT_PROFILE),
+        str(filament_profile),
         "--slice",
         "0",
         "--export-3mf",
@@ -497,9 +508,45 @@ def _run_level2(
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="replace")
         stderr = raw or ""
+    except OSError as exc:
+        # The exe path passed validation (is_file()) but could not actually
+        # be launched -- e.g. WinError 193, a file that exists but is not
+        # executable. Caught here so the slice check fails cleanly, with
+        # the OS error surfaced in both the message and stderr_excerpt,
+        # instead of a bare traceback escaping run_qc.
+        elapsed = time.monotonic() - start
+        info = SlicerInfo(
+            found=True,
+            exe=str(exe),
+            elapsed_s=round(elapsed, 2),
+            stderr_excerpt=str(exc)[:2000],
+        )
+        check = QCCheck(
+            name="slice_success",
+            level=2,
+            passed=False,
+            measured=None,
+            expected="a .gcode.3mf over 1 KB with a non-zero print-time header",
+            message=f"OrcaSlicer could not be launched: {exc}",
+        )
+        return info, check, None
     elapsed = time.monotonic() - start
 
-    passed, measured, message = _judge_slice(out_path, timed_out)
+    passed, measured, message = _judge_slice(out_path)
+    slicer_warning: str | None = None
+    if timed_out:
+        # A timeout kills/reaps the process (subprocess.run's own timeout
+        # handling), but does not override the artifact gates: whatever
+        # OrcaSlicer left behind at out_path is still judged normally. A
+        # partial/truncated file can't pass the size or header gate, so
+        # this can only turn a genuine failure into a pass if the slicer
+        # had, in fact, already finished writing a good artifact before
+        # the timeout fired.
+        slicer_warning = (
+            f"OrcaSlicer exceeded the {timeout_s:.0f}s timeout; the slice "
+            f"was judged from the artifact it left behind."
+        )
+        message = f"{message} ({slicer_warning})"
     info = SlicerInfo(
         found=True,
         exe=str(exe),
@@ -514,13 +561,11 @@ def _run_level2(
         expected="a .gcode.3mf over 1 KB with a non-zero print-time header",
         message=message,
     )
-    return info, check, None
+    return info, check, slicer_warning
 
 
-def _judge_slice(out_path: Path, timed_out: bool) -> tuple[bool, Any, str]:
+def _judge_slice(out_path: Path) -> tuple[bool, Any, str]:
     """Apply the two measured success gates. Never the exit code or stdout."""
-    if timed_out:
-        return False, None, "OrcaSlicer did not finish within the timeout."
     if not out_path.exists():
         return False, None, f"No .gcode.3mf was produced at {out_path}."
     size = out_path.stat().st_size
