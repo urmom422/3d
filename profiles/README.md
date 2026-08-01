@@ -154,5 +154,14 @@ Otherwise probe, in order, until one exists:
 4. `%ProgramFiles(x86)%\OrcaSlicer\orca-slicer.exe` — fallback for a
    32-bit-prefixed install.
 
-If none of the above exist, fail with a clear "OrcaSlicer not found; set
-ORCASLICER_EXE" error rather than guessing further.
+If none of the above exist, do not guess further: per the spec, the QC
+module records a named "OrcaSlicer not found; set ORCASLICER_EXE" warning,
+skips level 2, and caps the verdict at "passes-level-1" (never
+"print-ready" without a real slice). Only a set-but-wrong `ORCASLICER_EXE`
+is a hard error.
+
+One more measured note on the exit code: while all failures observed
+during profile bundling returned 0, a later raw failing slice was seen to
+return a nonzero code (4294967246) — so the exit code is best described
+as carrying no reliable signal in either direction, which leaves the two
+gates above as the only judges.
