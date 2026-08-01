@@ -1,4 +1,5 @@
 *.gcode.3mf
+_oversize/
 .venv/
 __pycache__/
 *.pyc
