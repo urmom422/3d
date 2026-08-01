@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "slug": "example-badge",
+  "verdict": "print-ready",
+  "levels_run": [
+    1,
+    2
+  ],
+  "checks": [
+    {
+      "name": "export_3mf.readable",
+      "level": 1,
+      "passed": true,
+      "measured": [
+        "base",
+        "detail"
+      ],
+      "expected": "a readable export",
+      "message": "example-badge.3mf loaded cleanly."
+    },
+    {
+      "name": "export_stl.readable",
+      "level": 1,
+      "passed": true,
+      "measured": 842,
+      "expected": "a readable export",
+      "message": "example-badge.stl loaded cleanly."
+    },
+    {
+      "name": "base.watertight",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "base: mesh is watertight."
+    },
+    {
+      "name": "base.winding_consistent",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "base: face winding is consistent."
+    },
+    {
+      "name": "base.is_volume",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "base: mesh is a valid, closed volume."
+    },
+    {
+      "name": "base.no_degenerate_faces",
+      "level": 1,
+      "passed": true,
+      "measured": 0,
+      "expected": 0,
+      "message": "base: no degenerate faces."
+    },
+    {
+      "name": "base.body_count",
+      "level": 1,
+      "passed": true,
+      "measured": 1,
+      "expected": 1,
+      "message": "base: exactly one body, as expected."
+    },
+    {
+      "name": "detail.watertight",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "detail: mesh is watertight."
+    },
+    {
+      "name": "detail.winding_consistent",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "detail: face winding is consistent."
+    },
+    {
+      "name": "detail.is_volume",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "detail: mesh is a valid, closed volume."
+    },
+    {
+      "name": "detail.no_degenerate_faces",
+      "level": 1,
+      "passed": true,
+      "measured": 0,
+      "expected": 0,
+      "message": "detail: no degenerate faces."
+    },
+    {
+      "name": "detail.body_count",
+      "level": 1,
+      "passed": true,
+      "measured": 1,
+      "expected": ">= 1",
+      "message": "detail: 1 raised region(s), each printing fused to the base."
+    },
+    {
+      "name": "combined_stl.watertight",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "combined_stl: mesh is watertight."
+    },
+    {
+      "name": "combined_stl.winding_consistent",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "combined_stl: face winding is consistent."
+    },
+    {
+      "name": "combined_stl.is_volume",
+      "level": 1,
+      "passed": true,
+      "measured": true,
+      "expected": true,
+      "message": "combined_stl: mesh is a valid, closed volume."
+    },
+    {
+      "name": "combined_stl.no_degenerate_faces",
+      "level": 1,
+      "passed": true,
+      "measured": 0,
+      "expected": 0,
+      "message": "combined_stl: no degenerate faces."
+    },
+    {
+      "name": "combined_stl.body_count",
+      "level": 1,
+      "passed": true,
+      "measured": 1,
+      "expected": 1,
+      "message": "combined_stl: exactly one body, as expected."
+    },
+    {
+      "name": "bed_fit",
+      "level": 1,
+      "passed": true,
+      "measured": [
+        50.0,
+        38.636,
+        3.8
+      ],
+      "expected": [
+        180.0,
+        180.0,
+        180.0
+      ],
+      "message": "Model measures 50.0 x 38.6 x 3.8 mm, within the 180x180x180 mm bed."
+    },
+    {
+      "name": "wall_thickness",
+      "level": 1,
+      "passed": true,
+      "measured": null,
+      "expected": ">= 1.2 mm",
+      "message": "No wall thinner than 1.2 mm found in the printed base."
+    },
+    {
+      "name": "hole_diameter",
+      "level": 1,
+      "passed": true,
+      "measured": 5.194,
+      "expected": 5.2,
+      "message": "Hole measures 5.19 mm across (spec: 5.2 mm)."
+    },
+    {
+      "name": "hole_margin",
+      "level": 1,
+      "passed": true,
+      "measured": 2.013,
+      "expected": 2.0,
+      "message": "Hole has 2.01 mm of margin (spec: 2.0 mm)."
+    },
+    {
+      "name": "detail_depth",
+      "level": 1,
+      "passed": true,
+      "measured": 0.8,
+      "expected": ">= 0.6 mm",
+      "message": "Detail depth is 0.8 mm, at or above the 0.6 mm minimum."
+    },
+    {
+      "name": "detail_present",
+      "level": 1,
+      "passed": true,
+      "measured": 374.12,
+      "expected": "a detail layer in the export",
+      "message": "The raised detail layer is in the export (374.1 mm2 of it)."
+    },
+    {
+      "name": "detail_depth_measured",
+      "level": 1,
+      "passed": true,
+      "measured": 0.8,
+      "expected": 0.8,
+      "message": "The raised detail measures 0.80 mm of relief in the export (spec: 0.8 mm)."
+    },
+    {
+      "name": "detail_stroke_width",
+      "level": 1,
+      "passed": true,
+      "measured": null,
+      "expected": ">= 1.0 mm",
+      "message": "No detail stroke thinner than 1.0 mm found."
+    },
+    {
+      "name": "slice_success",
+      "level": 2,
+      "passed": true,
+      "measured": 2558.0,
+      "expected": "a .gcode.3mf over 1 KB with a non-zero print-time header",
+      "message": "Sliced successfully; ~2558s estimated print time."
+    }
+  ],
+  "warnings": [],
+  "slicer": {
+    "found": true,
+    "exe": "C:\\Users\\jconkle\\AppData\\Local\\Programs\\OrcaSlicer\\orca-slicer.exe",
+    "elapsed_s": 0.82,
+    "stderr_excerpt": null
+  }
+}
