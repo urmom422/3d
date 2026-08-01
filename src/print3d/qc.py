@@ -720,6 +720,25 @@ def _mesh_integrity_checks(name: str, mesh: trimesh.Trimesh) -> list[QCCheck]:
 
 def _body_count_check(name: str, mesh: trimesh.Trimesh) -> QCCheck:
     count = int(mesh.body_count)
+    if name == _DETAIL_OBJECT_NAME:
+        # Multiple raised detail regions (initials, letters, eyes) are
+        # legitimate two-color artwork: each region prints fused to the
+        # base, never as a loose piece. Loose-piece risk is judged on
+        # the base and the fused STL, which keep the strict one-body
+        # expectation below.
+        return QCCheck(
+            name=f"{name}.body_count",
+            level=1,
+            passed=count >= 1,
+            measured=count,
+            expected=">= 1",
+            message=(
+                f"{name}: {count} raised region(s), each printing fused "
+                f"to the base."
+                if count >= 1
+                else f"{name}: the detail object contains no bodies."
+            ),
+        )
     return QCCheck(
         name=f"{name}.body_count",
         level=1,

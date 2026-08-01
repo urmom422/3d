@@ -345,6 +345,25 @@ def test_two_loose_bodies_in_one_stl_fail_the_body_count_check(good, tmp_path):
     assert report.verdict == "failed"
 
 
+def test_multiple_raised_detail_regions_are_legal(tmp_path):
+    """Two disconnected detail regions (initials, letters, eyes) are
+    legitimate two-color artwork: each prints fused to the base, so only
+    the base and the fused STL keep the strict one-body expectation."""
+    silhouette = _rounded_square()
+    detail = MultiPolygon([box(8, 8, 16, 16), box(24, 8, 32, 16)])
+    trace, solids, mf3, stl = _built(tmp_path, silhouette, detail, _spec())
+
+    report = run_qc(trace, solids, mf3, stl, tmp_path, run_level2=False)
+    by_name = _by_name(report)
+
+    detail_check = by_name["detail.body_count"]
+    assert detail_check.passed is True
+    assert detail_check.measured == 2
+    assert by_name["base.body_count"].passed is True
+    assert by_name["combined_stl.body_count"].passed is True
+    assert report.verdict == "passes-level-1"
+
+
 # --- unreadable exports are a verdict, not a crash -------------------------
 
 
