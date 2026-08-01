@@ -5,8 +5,8 @@ description = "Free-software pipeline converting 2D images into print-ready 3D m
 readme = "README.md"
 requires-python = "==3.13.*"
 dependencies = [
-    "vtracer",
-    "potracer",
+    "potracer>=0.0.4",
+    "numpy",
     "shapely",
     "build123d>=0.11",
     "trimesh>=5.0",
