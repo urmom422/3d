@@ -1,0 +1,9 @@
+*.gcode.3mf
+_oversize/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.egg-info/
+*.log
