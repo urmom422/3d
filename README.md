@@ -17,8 +17,10 @@ uv sync
 uv run make3d <image> --type keychain
 ```
 
-`uv` provisions Python itself (see `.python-version`) — there is no system
-Python on this machine, and none is required.
+`uv` provisions Python itself (see `.python-version`), independent of
+whatever Python (if any) is already installed on the machine — the
+Python environment is the same everywhere, and a system install is
+never touched.
 
 ## Quality gates
 
