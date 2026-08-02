@@ -29,6 +29,25 @@ A design may only be called **print-ready** once it has passed level 2
 (the OrcaSlicer CLI slice check), not merely level 1 (geometry checks).
 Don't use "print-ready" loosely in docs, reports, or commit messages.
 
+## The seam — capability vs judgment
+
+The pipeline is an AI-assisted workflow over a deterministic core. The
+boundary between the two is fixed, and it runs through judgment, not
+capability:
+
+- **Scripts own every capability, end to end** — trace, build, quality
+  gate, slice, and the triage, repair and prototype stages as they land.
+  All of it stays runnable headless, without an assistant, and covered by
+  tests. This is a hard constraint, not an aspiration.
+- **The assistant owns judgment** — interview, interpretation,
+  recommendation, and consent. It decides what to ask the scripts for and
+  what to tell the human. It never holds behaviour the scripts lack.
+- The seam objects are the **settled spec** and — once artwork repair
+  lands — the **repair consent record**.
+
+Rule of thumb when placing new work: *capability → scripts; judgment →
+the skill.*
+
 ## Code conventions
 
 - Free software only — no paid tools or paid APIs anywhere in the
