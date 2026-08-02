@@ -78,7 +78,7 @@ __all__ = [
 #: tests can force the DRIVE_LINK.md path with a tiny fake threshold.
 _MAX_COMMITTABLE_BYTES = 10 * 1024 * 1024
 
-#: Where the Chief Conductor uploads anything too big to commit. Manual
+#: Where the Master Conductor uploads anything too big to commit. Manual
 #: upload only -- the pipeline never touches Drive itself.
 _DRIVE_FOLDER_URL = (
     "https://drive.google.com/drive/folders/1IxXcWLzxpwOyFO2FQLSh7zQSMs_W3wai"
@@ -316,7 +316,7 @@ def _enforce_size_limit(
     nothing to protect them from).
 
     Oversized files are *moved*, not deleted: dropping them used to leave
-    ``DRIVE_LINK.md`` pointing the Chief Conductor at a file that no
+    ``DRIVE_LINK.md`` pointing the Master Conductor at a file that no
     longer existed anywhere. They land in ``_oversize/`` inside the
     staging dir (gitignored, so the rest of the design folder stays
     committable) and survive there for manual upload.
@@ -336,7 +336,7 @@ def _enforce_size_limit(
         "",
         f"These exceeded the {limit_mb:.1f} MB commit limit and were moved "
         f"into `_oversize/` (gitignored) instead of being committed. Upload "
-        f"them manually to the Chief Conductor's Drive folder: "
+        f"them manually to the Master Conductor's Drive folder: "
         f"{_DRIVE_FOLDER_URL}",
         "",
     ]
