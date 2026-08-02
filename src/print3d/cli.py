@@ -404,7 +404,10 @@ def _run(args: argparse.Namespace) -> int:
 
     try:
         trace = trace_image(
-            image_path, size_mm=args.size, detail=(args.detail != "none")
+            image_path,
+            size_mm=args.size,
+            detail=(args.detail != "none"),
+            photo=args.photo,
         )
     except TraceError as exc:
         print(str(exc), file=sys.stderr)
@@ -561,6 +564,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-slice",
         action="store_true",
         help="Skip the OrcaSlicer level-2 check; verdict caps at 'passes-level-1'.",
+    )
+    parser.add_argument(
+        "--photo",
+        action="store_true",
+        help=(
+            "Image is a phone photo of a paper drawing, not flat artwork: "
+            "even out the lighting and shadows first, then treat pencil or "
+            "marker strokes as ink and the paper as background. Off by "
+            "default."
+        ),
     )
     parser.add_argument(
         "--designs-root",

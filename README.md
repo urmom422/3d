@@ -10,6 +10,9 @@ optional detail layer), cleans it up, builds a 3D solid (base + raised or
 recessed detail, keyring hole, chamfer), and exports a multi-object 3MF
 (for AMS two-color printing) plus an STL.
 
+**New here?** Start with [`START_HERE.md`](START_HERE.md) for a
+step-by-step, kid-friendly walkthrough of building your first keychain.
+
 ## Quick start
 
 ```
@@ -17,8 +20,10 @@ uv sync
 uv run make3d <image> --type keychain
 ```
 
-`uv` provisions Python itself (see `.python-version`) — there is no system
-Python on this machine, and none is required.
+`uv` provisions Python itself (see `.python-version`), independent of
+whatever Python (if any) is already installed on the machine — the
+Python environment is the same everywhere, and a system install is
+never touched.
 
 ## Quality gates
 

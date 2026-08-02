@@ -6,9 +6,11 @@ what the repo is and the quality-gate concept.
 
 ## Toolchain
 
-- **uv only.** There is no system Python on this machine. Always run
-  `uv sync` / `uv run ...` from the repo root. Never invoke a bare
-  `python`/`pip`.
+- **uv only.** uv brings and pins its own Python, so the repo's Python
+  environment is the same on every machine regardless of what Python (if
+  any) is already installed there — and an installed Python is never
+  touched. Always run `uv sync` / `uv run ...` from the repo root. Never
+  invoke a bare `python`/`pip`.
 - Python version is pinned in `.python-version`; `uv` provisions it.
 - Commit `uv.lock` — lockfiles are checked in, not gitignored.
 
