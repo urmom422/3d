@@ -370,7 +370,9 @@ def test_photo_flag_runs_the_pipeline_on_a_photographed_drawing(
     report = json.loads(
         (designs_root / "photo-mode" / "report.json").read_text(encoding="utf-8")
     )
-    assert report["verdict"] in ("print-ready", "passes-level-1")
+    # _run always passes --no-slice, so level 1 is the ceiling here:
+    # anything else (print-ready included) would mean the gate broke.
+    assert report["verdict"] == "passes-level-1"
 
 
 def test_without_photo_flag_the_same_lit_image_fails_qc(photo_image, tmp_path):

@@ -85,7 +85,8 @@ A few notes on that command:
 
 The command will print out what it's doing, and — if all goes well — a
 `report:` line at the end showing the full path to your new design's
-quality report (it ends in `designs\your-drawing\report.md`).
+quality report (a file called `report.md`, inside your drawing's own
+folder under `designs/`).
 
 ### Step 5: See what you got
 

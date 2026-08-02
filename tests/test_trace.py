@@ -17,12 +17,17 @@ from shapely.geometry import MultiPolygon
 
 from print3d.spec import MIN_DETAIL_STROKE_MM, MIN_WALL_MM
 from print3d.trace import (
+    DEFAULT_DETAIL_THRESHOLD,
+    DEFAULT_SILHOUETTE_THRESHOLD,
     ThinFeatureError,
     TraceError,
     TraceResult,
     UnsupportedImageError,
+    _PHOTO_MAX_LONG_SIDE_PX,
     _PHOTO_MAX_SHORT_SIDE_PX,
     _flatten_photo,
+    _load_masks,
+    _photo_working_copy,
     find_thin_regions,
     trace_detail,
     trace_image,
@@ -777,25 +782,72 @@ def test_photo_mode_reports_no_strokes_found_in_the_error_style(tmp_path):
 
 def test_photo_mode_ignores_alpha_even_when_present(tmp_path):
     """A photographed drawing has no meaningful transparency: photo=True
-    must not switch over to the alpha channel just because the file
-    happens to carry one."""
+    must never let the alpha channel drive the silhouette, and transparent
+    pixels must read as blank paper - never as ink, whatever colour an
+    image editor's eraser left underneath them."""
     w, h = 320, 320
     yy, xx = np.mgrid[0:h, 0:w]
     gradient = (235 - 60 * (xx / w) - 30 * (yy / h)).astype(np.uint8)
     image = Image.fromarray(gradient, mode="L").convert("RGBA")
     draw = ImageDraw.Draw(image)
     draw.ellipse([80, 80, 240, 240], outline=(20, 20, 20, 255), width=14)
-    # A meaningfully transparent corner: if alpha were consulted (as it
-    # would be for a non-photo input, see _MIN_TRANSPARENT_FRACTION) this
-    # would read as "mostly background" and starve the silhouette.
-    for x in range(30):
-        for y in range(30):
-            image.putpixel((x, y), (255, 255, 255, 0))
+    # A meaningfully transparent corner (see _MIN_TRANSPARENT_FRACTION)
+    # with DARK colour underneath - the payload an eraser tool typically
+    # leaves behind. Read as opaque RGB it would be a fat ink blob in the
+    # corner; composited over white it is blank paper.
+    for x in range(60):
+        for y in range(60):
+            image.putpixel((x, y), (20, 20, 20, 0))
     path = _save(image, tmp_path, "photo_with_alpha.png")
 
+    sil, _ = _load_masks(
+        path, DEFAULT_SILHOUETTE_THRESHOLD, DEFAULT_DETAIL_THRESHOLD, photo=True
+    )
+    # The inked ring is found (alpha did not become the silhouette)...
+    assert sil.any()
+    # ...and the dark-but-transparent corner reads as paper, not ink.
+    assert not sil[0:60, 0:60].any()
+
+    # The full trace still stands on top of those masks.
     result = trace_image(path, SIZE_MM, photo=True, detail=False)
     assert not result.silhouette.is_empty
-    assert result.silhouette.area > 0
+
+
+def test_photo_mode_honours_exif_orientation(tmp_path):
+    """Phone JPEGs record "which way up" in EXIF metadata instead of
+    rotating the pixels; photo mode must apply it or a portrait photo
+    traces sideways."""
+    w, h = 320, 200
+    yy, xx = np.mgrid[0:h, 0:w]
+    gradient = (230 - 40 * (xx / w) - 20 * (yy / h)).astype(np.uint8)
+    image = Image.fromarray(gradient, mode="L").convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse([60, 40, 260, 160], outline=(15, 15, 15), width=14)
+    exif = Image.Exif()
+    exif[0x0112] = 6  # orientation: top of the scene is on the right
+    path = tmp_path / "sideways.jpg"
+    image.save(path, exif=exif)
+
+    sil, _ = _load_masks(
+        path, DEFAULT_SILHOUETTE_THRESHOLD, DEFAULT_DETAIL_THRESHOLD, photo=True
+    )
+    # Masks are (rows, cols): honouring orientation 6 turns the 320x200
+    # landscape file into a 200-wide, 320-tall portrait mask. Ignoring
+    # EXIF would leave the landscape shape (200, 320).
+    assert sil.shape == (320, 200)
+    assert sil.any()
+
+
+def test_photo_working_copy_caps_extreme_aspect_images():
+    """An image whose short side is under its cap must not be exempt from
+    downscaling outright: a degenerately wide strip would keep its full
+    pixel count through the float64 illumination passes."""
+    strip = np.full((100, 40_000), 200, dtype=np.uint8)
+    work = _photo_working_copy(strip)
+    assert max(work.shape) <= _PHOTO_MAX_LONG_SIDE_PX
+    assert min(work.shape) >= 1
+    # Aspect is preserved: the strip is still a strip, just bounded.
+    assert work.shape[0] < work.shape[1]
 
 
 # --- input handling --------------------------------------------------------

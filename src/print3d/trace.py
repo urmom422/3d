@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import potrace
-from PIL import Image
+from PIL import Image, ImageOps
 from shapely import affinity
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
@@ -122,6 +122,15 @@ _DEGENERATE_DETAIL_RATIO = 0.95
 #: covers correspondingly more of the page - stronger noise suppression,
 #: which is what a noisy phone photo wants anyway.
 _PHOTO_MAX_SHORT_SIDE_PX = 1200
+
+#: Cap on the *longer* side of the photo-mode working copy. The short-side
+#: cap alone leaves a hole: an extreme-aspect image (say 800 px tall and
+#: hundreds of thousands wide) sails under it untouched, and the float64
+#: passes downstream then chew through memory proportional to the full
+#: pixel count. Four times the short cap admits any real photograph -
+#: a 3:1 panorama at the short cap is 3600 px - while bounding the
+#: working pixel count for degenerate inputs.
+_PHOTO_MAX_LONG_SIDE_PX = 4 * _PHOTO_MAX_SHORT_SIDE_PX
 
 #: Fraction of the shorter side used as the blur radius for the
 #: illumination field (see :func:`_illumination_field`). Lighting across a
@@ -670,10 +679,12 @@ def _load_masks(
     ``photo=True`` replaces the loaded luminance with :func:`_flatten_photo`'s
     cleaned-up version before either mask is built, and - because
     transparency has no meaning for a photograph of a physical piece of
-    paper - forces the alpha channel to be ignored entirely, even if the
+    paper - never lets the alpha channel drive the silhouette, even if the
     file happens to carry one. A phone camera never produces one, but a
-    photo run through an image editor first might; treating it as opaque is
-    the documented behaviour rather than an accident of which branch runs.
+    photo run through an image editor first might; any transparent pixels
+    it left behind read as blank paper (they are composited over white
+    before thresholding), never as ink. That is the documented behaviour
+    rather than an accident of which branch runs.
     Photo mode also caps the resolution it works at, so the masks it
     returns may be smaller than the file on disk - see
     :data:`_PHOTO_MAX_SHORT_SIDE_PX`. Nothing downstream cares: the
@@ -696,6 +707,13 @@ def _load_masks(
             f"Could not read {source.name} as an image ({exc}). PNG and JPG "
             f"files work best."
         ) from exc
+
+    if photo:
+        # Phone cameras record "which way up" in EXIF metadata instead of
+        # rotating the pixels; without honouring it a portrait photo traces
+        # sideways. Photo mode only - with the flag off, files trace exactly
+        # as they always have.
+        image = ImageOps.exif_transpose(image)
 
     rgba = image.convert("RGBA")
     alpha = np.array(rgba.getchannel("A"))
@@ -820,16 +838,22 @@ def _flatten_photo(gray: np.ndarray, source: Path) -> np.ndarray:
 def _photo_working_copy(gray: np.ndarray) -> np.ndarray:
     """Downscale ``gray`` to the photo-mode working size, if it is bigger.
 
-    Lanczos, because it is the resampler that keeps a thin pencil line
-    looking like a line rather than a dotted one. Images already at or
-    under the cap are handed straight back untouched, so the small
-    hand-scanned artwork case is bit-for-bit what it always was.
+    Both caps apply - :data:`_PHOTO_MAX_SHORT_SIDE_PX` on the shorter side
+    and :data:`_PHOTO_MAX_LONG_SIDE_PX` on the longer - and the tighter
+    one wins, keeping the aspect ratio. Lanczos, because it is the
+    resampler that keeps a thin pencil line looking like a line rather
+    than a dotted one. Images already inside both caps are handed straight
+    back untouched, so the small hand-scanned artwork case is bit-for-bit
+    what it always was.
     """
     height, width = gray.shape
-    short_side = min(height, width)
-    if short_side <= _PHOTO_MAX_SHORT_SIDE_PX:
+    scale = min(
+        1.0,
+        _PHOTO_MAX_SHORT_SIDE_PX / min(height, width),
+        _PHOTO_MAX_LONG_SIDE_PX / max(height, width),
+    )
+    if scale >= 1.0:
         return gray
-    scale = _PHOTO_MAX_SHORT_SIDE_PX / short_side
     size = (max(1, round(width * scale)), max(1, round(height * scale)))
     shrunk = Image.fromarray(gray, mode="L").resize(size, Image.LANCZOS)
     return np.asarray(shrunk, dtype=np.uint8)
