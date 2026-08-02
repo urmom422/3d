@@ -32,6 +32,6 @@ Don't use "print-ready" loosely in docs, reports, or commit messages.
 - Free software only — no paid tools or paid APIs anywhere in the
   pipeline; dependencies arrive via `uv` from PyPI, nothing else.
 - No absolute paths in code — derive paths from the repo root at runtime.
-- The hall's program profile for this repo lives in the conductor repo at
-  `programs/print3d/`; specs live in the conductor repo under `specs/`
+- The project profile for this repo lives in the conductor repo at
+  `projects/print3d/`; specs live in the conductor repo under `specs/`
   (e.g. `specs/print3d-bootstrap/`), not in this repo.

@@ -49,7 +49,7 @@ source image, traced SVG, exported 3MF, exported STL, and a quality report
 copy, `traced.svg`, 3MF, STL — never the report files) is never
 committed. Instead it is moved into a gitignored `designs/<slug>/_oversize/`
 folder, and `DRIVE_LINK.md` in the design folder names each moved file
-for the Chief Conductor to upload to Google Drive manually — the
+for the Master Conductor to upload to Google Drive manually — the
 pipeline never touches Drive itself.
 
 `*.gcode.3mf` files (slicer output, not the design's exported 3MF) are

@@ -142,7 +142,7 @@ size limit (source image, traced SVG, 3MF, or STL — never the reports)
 is moved into `designs/<slug>/_oversize/` (gitignored, not committed to
 git). The exact limit appears in the warning text and in
 `DRIVE_LINK.md` inside the design folder, which also names the moved
-files and the Chief Conductor's Drive folder link. Uploading is
+files and the Master Conductor's Drive folder link. Uploading is
 **manual** — the pipeline never touches Drive itself; tell the user
 which files to upload and point them at `DRIVE_LINK.md`.
 
