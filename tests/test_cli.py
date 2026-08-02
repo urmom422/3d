@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
@@ -54,6 +55,21 @@ def flat_image(tmp_path):
     draw = ImageDraw.Draw(image)
     draw.ellipse([20, 20, 279, 279], fill=(10, 10, 10, 255))
     path = tmp_path / "flat.png"
+    image.save(path)
+    return path
+
+
+@pytest.fixture
+def photo_image(tmp_path):
+    """A phone-photo-style fixture: an illumination gradient plus a bold
+    ink ring, the same shape as ``sample_image`` but lit unevenly."""
+    w, h = 320, 320
+    yy, xx = np.mgrid[0:h, 0:w]
+    gradient = 235 - 70 * (xx / w) - 40 * (yy / h)
+    image = Image.fromarray(gradient.astype(np.uint8), mode="L").convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse([70, 70, 250, 250], outline=(15, 15, 15), width=16)
+    path = tmp_path / "photo.png"
     image.save(path)
     return path
 
@@ -338,6 +354,42 @@ def test_explicit_detail_none_does_not_need_the_flip_warning(sample_image, tmp_p
         (designs_root / "none-mode" / "report.json").read_text(encoding="utf-8")
     )
     assert not any("was requested" in w for w in report["warnings"])
+
+
+# --- --photo flag wiring -----------------------------------------------
+
+
+def test_photo_flag_runs_the_pipeline_on_a_photographed_drawing(
+    photo_image, tmp_path
+):
+    designs_root = tmp_path / "designs"
+    rc = _run(
+        photo_image, "--photo", "--name", "photo-mode", designs_root=designs_root
+    )
+    assert rc == 0
+    report = json.loads(
+        (designs_root / "photo-mode" / "report.json").read_text(encoding="utf-8")
+    )
+    assert report["verdict"] in ("print-ready", "passes-level-1")
+
+
+def test_without_photo_flag_the_same_lit_image_fails_qc(photo_image, tmp_path):
+    """--photo is opt-in: read as flat artwork, the unflattened illumination
+    gradient itself crosses the ink thresholds and sinks the verdict, where
+    ``--photo`` (above) gets the very same file to a passing one."""
+    designs_root = tmp_path / "designs"
+    rc = _run(
+        photo_image,
+        "--name",
+        "no-photo-mode",
+        designs_root=designs_root,
+        exit_ok=False,
+    )
+    assert rc == 1
+    report = json.loads(
+        (designs_root / "no-photo-mode" / "report.json").read_text(encoding="utf-8")
+    )
+    assert report["verdict"] == "failed"
 
 
 # --- slug derivation, ASCII-folding and reserved names ----------------------

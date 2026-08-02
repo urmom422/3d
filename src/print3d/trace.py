@@ -99,6 +99,72 @@ _MIN_TRANSPARENT_FRACTION = 0.01
 #: degenerate: the detail layer is just the silhouette again.
 _DEGENERATE_DETAIL_RATIO = 0.95
 
+# --- photo mode (``--photo``) -----------------------------------------------
+#
+# A phone photo of a paper drawing is not the clean, flat artwork the rest
+# of this module assumes: paper shading and lighting gradients make "how
+# light is this pixel" a function of where on the page it sits, not just of
+# whether there is ink there. Photo mode fixes that up *before* the mask
+# logic above ever runs, so everything past it - including the degenerate
+# single-shade case - stays exactly as it already was.
+
+#: Shorter side, in pixels, that photo mode works at. A phone photo is
+#: 3000-4000 px on its short side; tracing gains nothing from that. At the
+#: largest part this machine can print (~250 mm) 1200 px is still ~0.2 mm
+#: per pixel, half a 0.4 mm nozzle width, and at the default 50 mm part it
+#: is 0.04 mm per pixel - finer than :data:`DEFAULT_SIMPLIFY_MM`, so those
+#: extra pixels are simplified away moments later regardless. Anything
+#: bigger is downscaled (Lanczos) before cleanup, which also bounds the
+#: cost of everything downstream: the whole photo path is O(pixels) with
+#: the pixel count capped here. One knock-on to know about: pixel-domain
+#: parameters like ``speckle_px`` apply at this working size, not at the
+#: photo's native size, so on a downscaled 12 MP photo one speckle unit
+#: covers correspondingly more of the page - stronger noise suppression,
+#: which is what a noisy phone photo wants anyway.
+_PHOTO_MAX_SHORT_SIDE_PX = 1200
+
+#: Fraction of the shorter side used as the blur radius for the
+#: illumination field (see :func:`_illumination_field`). Lighting across a
+#: sheet of paper varies slowly, so the field wants a wide window: wide
+#: enough to reach across a big filled shape and pick up the paper on the
+#: far side, narrow enough to still follow a real shadow edge. A sixth of
+#: the short side, applied as three box passes, reaches half the image.
+_PHOTO_FIELD_FRACTION = 1.0 / 6.0
+
+#: Minimum field radius, in pixels, for images small enough that the
+#: fraction above would round down to a window narrower than a stroke.
+_PHOTO_FIELD_MIN_PX = 8
+
+#: A pixel is provisionally ink when it is at least this much darker than
+#: the local paper level around it - i.e. below 80% of the field. Paper
+#: shading and sensor noise move a pixel by a few percent; a pencil line
+#: moves it by tens of percent. The gap between those two is what this
+#: sits in, and it is what lets a blank, unevenly lit page come back with
+#: *no* ink rather than with its dim half called ink.
+_PHOTO_INK_RATIO = 0.80
+
+#: How many times the field is re-estimated with the ink masked out. One
+#: pass already fixes the large-filled-shape case; a second lets the ink
+#: mask it was estimated from be refined against the flattened image, which
+#: tightens stroke edges. Beyond that, measured changes are nil.
+_PHOTO_FIELD_PASSES = 2
+
+#: Weight of the "no paper anywhere near here" fallback in the field's
+#: normalised convolution, in units of paper pixels. Deep inside a shape
+#: bigger than the blur can see across there is no local paper to
+#: interpolate from and the ratio would divide near-zero by near-zero;
+#: this pulls those pixels to the page's overall paper level instead.
+#: Tiny, so anywhere with real paper support is unaffected.
+_PHOTO_FIELD_FALLBACK_WEIGHT = 1e-3
+
+#: Minimum gap, on the flattened 0-255 scale, between the mean brightness of
+#: what Otsu calls "paper" and what it calls "ink" before that split is
+#: trusted as real strokes rather than residual shading. Otsu always
+#: returns *some* split, even across a perfectly blank, evenly-lit page -
+#: measured at ~2 there from illumination-correction noise alone, against
+#: ~45+ for the faintest real pencil tested. This sits well clear of both.
+_PHOTO_MIN_CONTRAST = 20.0
+
 #: Longest part the machine could ever print, used to tell "print it bigger"
 #: apart from "this artwork will never print".
 _MAX_PRINTABLE_MM = max(BED_SIZE_MM)
@@ -311,6 +377,7 @@ def trace_image(
     min_wall_mm: float = MIN_WALL_MM,
     min_detail_stroke_mm: float = MIN_DETAIL_STROKE_MM,
     speckle_px: int = DEFAULT_SPECKLE_PX,
+    photo: bool = False,
 ) -> TraceResult:
     """Trace ``image_path`` into printable silhouette and detail geometry.
 
@@ -318,13 +385,22 @@ def trace_image(
     everything is scaled uniformly to hit it. Raises
     :class:`ThinFeatureError` if the silhouette has printable features
     narrower than ``min_wall_mm``.
+
+    ``photo=True`` runs a cleanup pass on the loaded grayscale *before* any
+    of the above: it flattens uneven paper shading/lighting and turns
+    pencil/marker strokes into ink-black on paper-white (see
+    :func:`_flatten_photo`). That cleaned image then feeds the exact same
+    threshold logic as any other input - a photographed drawing is a single
+    shade of ink, so the detail layer typically comes back empty or
+    degenerate, which is the existing, expected behaviour for flat artwork,
+    not a photo-specific special case.
     """
     source = Path(image_path)
     if size_mm <= 0:
         raise ValueError("size_mm must be positive")
 
     sil_mask, detail_mask = _load_masks(
-        source, silhouette_threshold, detail_threshold
+        source, silhouette_threshold, detail_threshold, photo=photo
     )
 
     # Two very different failures used to share one message. Separate them:
@@ -578,7 +654,11 @@ def _drop_thin_parts(
 
 
 def _load_masks(
-    source: Path, silhouette_threshold: float, detail_threshold: float
+    source: Path,
+    silhouette_threshold: float,
+    detail_threshold: float,
+    *,
+    photo: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load ``source`` and return (silhouette mask, detail mask).
 
@@ -586,6 +666,18 @@ def _load_masks(
     comes from the alpha channel when the image has one and actually uses
     it, and from luminance otherwise. Detail is always luminance-based, and
     always clipped to the silhouette.
+
+    ``photo=True`` replaces the loaded luminance with :func:`_flatten_photo`'s
+    cleaned-up version before either mask is built, and - because
+    transparency has no meaning for a photograph of a physical piece of
+    paper - forces the alpha channel to be ignored entirely, even if the
+    file happens to carry one. A phone camera never produces one, but a
+    photo run through an image editor first might; treating it as opaque is
+    the documented behaviour rather than an accident of which branch runs.
+    Photo mode also caps the resolution it works at, so the masks it
+    returns may be smaller than the file on disk - see
+    :data:`_PHOTO_MAX_SHORT_SIDE_PX`. Nothing downstream cares: the
+    silhouette is scaled to ``size_mm`` from its own traced extent.
     """
     if source.suffix.lower() == ".svg":
         raise UnsupportedImageError(
@@ -611,12 +703,17 @@ def _load_masks(
     white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
     gray = np.array(Image.alpha_composite(white, rgba).convert("L"))
 
-    # "Has an alpha channel" is not "uses transparency": a single
-    # anti-aliased corner pixel at alpha 249 must not switch the whole
-    # silhouette over to the alpha channel (which would then read the entire
-    # opaque canvas as the part). Demand real, deliberate transparency.
-    transparent_fraction = float((alpha < _ALPHA_OPAQUE).mean())
-    uses_alpha = transparent_fraction >= _MIN_TRANSPARENT_FRACTION
+    if photo:
+        gray = _flatten_photo(gray, source)
+        uses_alpha = False
+    else:
+        # "Has an alpha channel" is not "uses transparency": a single
+        # anti-aliased corner pixel at alpha 249 must not switch the whole
+        # silhouette over to the alpha channel (which would then read the
+        # entire opaque canvas as the part). Demand real, deliberate
+        # transparency.
+        transparent_fraction = float((alpha < _ALPHA_OPAQUE).mean())
+        uses_alpha = transparent_fraction >= _MIN_TRANSPARENT_FRACTION
     if uses_alpha:
         # ``silhouette_threshold`` is honoured here too, as its opacity dual:
         # luminance keeps pixels darker than ``threshold`` of white, so alpha
@@ -629,6 +726,212 @@ def _load_masks(
 
     detail_mask = (gray < (255.0 * detail_threshold)) & silhouette_mask
     return silhouette_mask, detail_mask
+
+
+def _flatten_photo(gray: np.ndarray, source: Path) -> np.ndarray:
+    """Turn a photographed drawing into clean ink-on-paper, in place of raw
+    grayscale.
+
+    Four steps, all numpy + PIL:
+
+    1. **Shrink to a working size.** Photo mode caps the shorter side at
+       :data:`_PHOTO_MAX_SHORT_SIDE_PX` (see there for why that loses
+       nothing printable). Everything below - and every stage after this
+       function - then runs on a bounded number of pixels, which is what
+       keeps a 12-megapixel phone photo down to a couple of seconds.
+    2. **Estimate the illumination.** :func:`_illumination_field` works out
+       what each pixel's paper would have looked like with no ink on it,
+       reading *only* pixels that currently look like paper and
+       interpolating across the ones that look like ink.
+    3. **Flatten it out.** Dividing the grayscale by that field (rescaled
+       back to 0-255) cancels the shading: a stroke on a dim corner of the
+       page and the same stroke on a bright one come out equally dark.
+    4. **Threshold.** Otsu's method (:func:`_otsu_threshold`) finds the
+       graylevel that best splits the flattened image into two populations
+       - ink and paper - with no fixed cutoff to tune per photo.
+
+    Step 2 is the part worth spelling out. The obvious illumination
+    estimate - blur the photo, or take the brightest pixel in a window
+    around each one - reads the ink as if it were paper. For thin strokes
+    that barely matters. For the shapes children actually draw, a filled
+    heart or sun wider than the window, it is fatal: the shape's own
+    darkness lands in the estimate of the paper underneath it, dividing
+    cancels it against itself, and the middle of the shape comes back
+    reading as blank page. So the field is a **normalised convolution**
+    instead: blur the paper pixels' values and blur the paper mask, then
+    divide one by the other. Ink pixels contribute nothing to either, so
+    the field over a filled shape is interpolated from the paper around
+    it - exactly the lighting the paper under the shape would have had.
+
+    The result is handed back as a plain grayscale array (ink at 0, paper
+    at 255) so every threshold downstream of this function - silhouette,
+    detail, both - runs exactly as it does for any other input.
+    """
+    work = _photo_working_copy(gray).astype(np.float64)
+    height, width = work.shape
+    radius = max(
+        _PHOTO_FIELD_MIN_PX,
+        int(min(height, width) * _PHOTO_FIELD_FRACTION),
+    )
+
+    # First guess at the paper: a plain blur, ink included. It is wrong
+    # over big filled shapes - dragged down by the very ink it is meant to
+    # ignore - but it is wrong in the *safe* direction, because a shape
+    # dark enough to drag the local average down is also dark enough to
+    # fall well under _PHOTO_INK_RATIO of it. That is all the first ink
+    # mask has to get right; the masked passes below do the rest.
+    field = _box_blur(work, radius)
+    for _ in range(_PHOTO_FIELD_PASSES):
+        paper = work >= field * _PHOTO_INK_RATIO
+        field = _illumination_field(work, paper, radius)
+
+    flattened = np.clip(work / np.maximum(field, 1.0) * 255.0, 0.0, 255.0)
+
+    threshold = _otsu_threshold(flattened)
+    # ``threshold`` names a histogram *bin*, and that bin belongs to the
+    # dark side of the split (:func:`_otsu_threshold` counts it there), so
+    # the cut is one bin above it. A strict ``<`` instead drops every pixel
+    # that lands exactly on the split level - which on clean, low-noise
+    # artwork is not a stray pixel but a whole region of even ink.
+    ink_mask = flattened < threshold + 1.0
+    # Otsu always returns *a* split, even across a blank page - the residual
+    # noise from illumination correction still has a darker and a lighter
+    # half. A real stroke reads much darker than the paper around it even
+    # after flattening; residual noise does not. Demanding a minimum gap
+    # between the two sides' means tells the two cases apart.
+    contrast = (
+        float(flattened[~ink_mask].mean()) - float(flattened[ink_mask].mean())
+        if ink_mask.any() and (~ink_mask).any()
+        else 0.0
+    )
+
+    if not ink_mask.any() or contrast < _PHOTO_MIN_CONTRAST:
+        raise TraceError(
+            f"No pencil or marker strokes were found in {source.name} after "
+            f"correcting for the lighting. Try again with brighter, more "
+            f"even light and no shadow falling across the page, or draw "
+            f"with a darker pen or pencil - going over the lines a second "
+            f"time so they stand out from the paper."
+        )
+
+    return np.where(ink_mask, 0, 255).astype(np.uint8)
+
+
+def _photo_working_copy(gray: np.ndarray) -> np.ndarray:
+    """Downscale ``gray`` to the photo-mode working size, if it is bigger.
+
+    Lanczos, because it is the resampler that keeps a thin pencil line
+    looking like a line rather than a dotted one. Images already at or
+    under the cap are handed straight back untouched, so the small
+    hand-scanned artwork case is bit-for-bit what it always was.
+    """
+    height, width = gray.shape
+    short_side = min(height, width)
+    if short_side <= _PHOTO_MAX_SHORT_SIDE_PX:
+        return gray
+    scale = _PHOTO_MAX_SHORT_SIDE_PX / short_side
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    shrunk = Image.fromarray(gray, mode="L").resize(size, Image.LANCZOS)
+    return np.asarray(shrunk, dtype=np.uint8)
+
+
+def _illumination_field(
+    values: np.ndarray, paper: np.ndarray, radius: int
+) -> np.ndarray:
+    """The paper's brightness everywhere, read only from ``paper`` pixels.
+
+    A normalised convolution: blur the paper pixels' values, blur the paper
+    mask itself, divide. Where a pixel has paper around it the answer is
+    the local average of that paper; where it does not - the middle of a
+    filled-in shape - the weight tails off and the answer is dominated by
+    whatever paper is nearest, which is the right interpolation to make.
+
+    Well inside a shape wider than the blur can see across there is no
+    paper support at all, so both sums approach zero and the ratio would be
+    numerical noise. :data:`_PHOTO_FIELD_FALLBACK_WEIGHT` adds a whisper of
+    "the page's overall paper level" to both halves, which those pixels
+    then fall back to and every other pixel ignores.
+    """
+    fallback = float(values[paper].mean()) if paper.any() else float(values.mean())
+    weight = _box_blur(paper.astype(np.float64), radius)
+    total = _box_blur(np.where(paper, values, 0.0), radius)
+    return (total + _PHOTO_FIELD_FALLBACK_WEIGHT * fallback) / (
+        weight + _PHOTO_FIELD_FALLBACK_WEIGHT
+    )
+
+
+def _box_blur(values: np.ndarray, radius: int, passes: int = 3) -> np.ndarray:
+    """Blur ``values`` by averaging over a square window, ``passes`` times.
+
+    Three box passes approximate a Gaussian closely enough for something as
+    smooth as a lighting field (it is how PIL's own ``GaussianBlur`` is
+    built), and a box average over running sums costs the same *whatever
+    the window size* - one pass over the pixels per axis, no multiply by
+    window area. That is the difference that matters here: the window is a
+    sixth of the image, and the first version of this cleanup used a rank
+    filter that big, which cost pixels times window squared and took the
+    better part of an hour on a real phone photo.
+
+    Edges replicate rather than fade to black, so paper at the margin of
+    the page is not mistaken for shadow.
+    """
+    out = np.asarray(values, dtype=np.float64)
+    for _ in range(passes):
+        for axis in (0, 1):
+            out = _box_blur_axis(out, radius, axis)
+    return out
+
+
+def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    """One box average of ``values`` along ``axis``, via a running sum."""
+    moved = np.moveaxis(values, axis, -1)
+    padded = np.pad(moved, ((0, 0), (radius, radius)), mode="edge")
+    window = 2 * radius + 1
+    running = np.cumsum(padded, axis=-1)
+    running = np.concatenate(
+        (np.zeros(running.shape[:-1] + (1,)), running), axis=-1
+    )
+    averaged = (running[..., window:] - running[..., :-window]) / window
+    return np.moveaxis(averaged, -1, axis)
+
+
+def _otsu_threshold(values: np.ndarray) -> float:
+    """Otsu's method: the graylevel splitting ``values`` into two
+    populations with the least combined within-population variance.
+
+    Computed from the image's own 256-bin histogram, so no per-photo
+    calibration and no extra dependency beyond numpy. Standard formulation:
+    for every candidate split, the "cost" is each side's population times
+    its variance; Otsu shows that is minimised exactly where the *between*-
+    population variance below is maximised, which needs only running sums
+    over the histogram rather than recomputing a variance per candidate.
+    """
+    hist, _ = np.histogram(values, bins=256, range=(0, 256))
+    hist = hist.astype(np.float64)
+    total = hist.sum()
+    if total <= 0:  # pragma: no cover - defensive, values is never empty
+        return 128.0
+
+    levels = np.arange(256, dtype=np.float64)
+    cum_weight = np.cumsum(hist)
+    cum_intensity = np.cumsum(hist * levels)
+    total_intensity = cum_intensity[-1]
+
+    weight_bg = cum_weight
+    weight_fg = total - cum_weight
+    # Levels with zero population on one side can't be a real split; give
+    # them zero between-class variance instead of a division warning.
+    valid = (weight_bg > 0) & (weight_fg > 0)
+    mean_bg = np.zeros_like(cum_weight)
+    mean_fg = np.zeros_like(cum_weight)
+    mean_bg[valid] = cum_intensity[valid] / weight_bg[valid]
+    mean_fg[valid] = (total_intensity - cum_intensity[valid]) / weight_fg[valid]
+
+    between = np.zeros_like(cum_weight)
+    between[valid] = (
+        weight_bg[valid] * weight_fg[valid] * (mean_bg[valid] - mean_fg[valid]) ** 2
+    )
+    return float(np.argmax(between))
 
 
 # --- potrace plumbing ------------------------------------------------------

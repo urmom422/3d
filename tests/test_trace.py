@@ -7,8 +7,10 @@ so the shapes under test are readable in the diff. Keep them small
 
 from __future__ import annotations
 
+from pathlib import Path
 from xml.etree import ElementTree
 
+import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 from shapely.geometry import MultiPolygon
@@ -19,6 +21,8 @@ from print3d.trace import (
     TraceError,
     TraceResult,
     UnsupportedImageError,
+    _PHOTO_MAX_SHORT_SIDE_PX,
+    _flatten_photo,
     find_thin_regions,
     trace_detail,
     trace_image,
@@ -35,6 +39,88 @@ def _save(image: Image.Image, tmp_path, name: str):
     path = tmp_path / name
     image.save(path)
     return path
+
+
+def _photo_drawing(tmp_path, name="photo.png", size=(360, 360), noise_std=4.0):
+    """A synthetic "phone photo of a paper drawing": known stroke geometry,
+    an uneven-illumination gradient, and mild sensor noise on top -- built
+    in the test rather than committed as a binary, per this module's own
+    convention (see the module docstring), and with a ground-truth ink mask
+    returned alongside so segmentation quality can be measured directly
+    (IoU, background false-positive rate) instead of merely "did it trace".
+    """
+    w, h = size
+    yy, xx = np.mgrid[0:h, 0:w]
+    # Bright top-left corner fading to dim bottom-right: a desk lit from one
+    # side, the classic phone-photo lighting defect.
+    gradient = 235.0 - 70.0 * (xx / w) - 40.0 * (yy / h)
+    base = Image.fromarray(gradient.astype(np.uint8), mode="L").convert("RGB")
+    draw = ImageDraw.Draw(base)
+    ink = (20, 20, 20)
+    stroke = max(4, int(w * 0.035))
+    draw.ellipse(
+        [w * 0.25, h * 0.25, w * 0.75, h * 0.75], outline=ink, width=stroke
+    )
+    draw.ellipse([w * 0.375, h * 0.40, w * 0.45, h * 0.475], fill=ink)
+    draw.ellipse([w * 0.55, h * 0.40, w * 0.625, h * 0.475], fill=ink)
+    draw.arc(
+        [w * 0.375, h * 0.475, w * 0.625, h * 0.65],
+        start=20,
+        end=160,
+        fill=ink,
+        width=max(3, int(w * 0.025)),
+    )
+
+    ground_truth = Image.new("L", size, 0)
+    gt_draw = ImageDraw.Draw(ground_truth)
+    gt_draw.ellipse(
+        [w * 0.25, h * 0.25, w * 0.75, h * 0.75], outline=255, width=stroke
+    )
+    gt_draw.ellipse([w * 0.375, h * 0.40, w * 0.45, h * 0.475], fill=255)
+    gt_draw.ellipse([w * 0.55, h * 0.40, w * 0.625, h * 0.475], fill=255)
+    gt_draw.arc(
+        [w * 0.375, h * 0.475, w * 0.625, h * 0.65],
+        start=20,
+        end=160,
+        fill=255,
+        width=max(3, int(w * 0.025)),
+    )
+    ground_truth_mask = np.array(ground_truth) > 0
+
+    arr = np.array(base.convert("L")).astype(np.int16)
+    rng = np.random.default_rng(0)
+    noisy = np.clip(arr + rng.normal(0, noise_std, arr.shape), 0, 255).astype(
+        np.uint8
+    )
+    path = _save(Image.fromarray(noisy, mode="L"), tmp_path, name)
+    return path, ground_truth_mask
+
+
+def _filled_shape_photo(tmp_path, name="filled_photo.png", size=(300, 300)):
+    """A photographed drawing whose subject is one big *filled* shape.
+
+    Same uneven lighting as ``_photo_drawing``, but the ink is a solid disc
+    covering most of the page rather than thin strokes -- the case where an
+    illumination estimate that cannot tell ink from paper quietly hollows
+    the shape out. Returns the file and its ground-truth ink mask.
+    """
+    w, h = size
+    yy, xx = np.mgrid[0:h, 0:w]
+    gradient = 235.0 - 70.0 * (xx / w) - 40.0 * (yy / h)
+    base = Image.fromarray(gradient.astype(np.uint8), mode="L").convert("RGB")
+    box = [w * 0.2, h * 0.2, w * 0.8, h * 0.8]
+    ImageDraw.Draw(base).ellipse(box, fill=(25, 25, 25))
+
+    ground_truth = Image.new("L", size, 0)
+    ImageDraw.Draw(ground_truth).ellipse(box, fill=255)
+
+    arr = np.array(base.convert("L")).astype(np.int16)
+    rng = np.random.default_rng(1)
+    noisy = np.clip(arr + rng.normal(0, 4.0, arr.shape), 0, 255).astype(
+        np.uint8
+    )
+    path = _save(Image.fromarray(noisy, mode="L"), tmp_path, name)
+    return path, np.array(ground_truth) > 0
 
 
 @pytest.fixture
@@ -525,6 +611,191 @@ def test_a_donut_keeps_its_hole_and_the_island_inside_it(donut):
     assert result.silhouette.area == pytest.approx(
         outer - hole_area + island_area, rel=0.02
     )
+
+
+# --- photo mode --------------------------------------------------------
+
+
+def test_flatten_photo_recovers_strokes_from_uneven_lighting(tmp_path):
+    """Ground-truth IoU/false-positive check on the cleaned mask itself --
+    proves segmentation correctness, not merely that something traces."""
+    path, ground_truth_mask = _photo_drawing(tmp_path)
+    gray = np.array(Image.open(path).convert("L"))
+
+    cleaned = _flatten_photo(gray, path)
+    ink_mask = cleaned < 128
+
+    intersection = np.logical_and(ground_truth_mask, ink_mask).sum()
+    union = np.logical_or(ground_truth_mask, ink_mask).sum()
+    iou = intersection / union
+    background_false_positive = (
+        np.logical_and(~ground_truth_mask, ink_mask).sum()
+        / (~ground_truth_mask).sum()
+    )
+
+    assert iou > 0.85
+    assert background_false_positive < 0.02
+
+
+def test_flatten_photo_keeps_a_big_filled_shape_solid(tmp_path):
+    """A filled-in shape wider than the lighting estimate can see across
+    must keep its middle as ink.
+
+    The interesting failure here is silent: an illumination estimate that
+    reads the ink as if it were paper puts the shape's own darkness into
+    the estimate of the page underneath it, so dividing cancels the shape
+    against itself and the middle comes back as blank page. The geometry
+    is then wrong -- a ring instead of a disc -- with nothing raised as an
+    error. Kids fill shapes in, so this is a core input, not an edge case.
+    """
+    path, ground_truth_mask = _filled_shape_photo(tmp_path)
+    gray = np.array(Image.open(path).convert("L"))
+
+    ink_mask = _flatten_photo(gray, path) < 128
+
+    intersection = np.logical_and(ground_truth_mask, ink_mask).sum()
+    union = np.logical_or(ground_truth_mask, ink_mask).sum()
+    assert intersection / union > 0.95
+
+    # The middle of the disc is the part that cancels itself out when the
+    # estimate is wrong, so pin it explicitly rather than trusting an
+    # overall score to notice a hole.
+    height, width = ink_mask.shape
+    centre = ink_mask[
+        height // 2 - 20 : height // 2 + 20, width // 2 - 20 : width // 2 + 20
+    ]
+    assert centre.all()
+
+    recovered = np.logical_and(ground_truth_mask, ink_mask).sum() / (
+        ground_truth_mask.sum()
+    )
+    assert recovered > 0.95
+
+
+def test_flatten_photo_caps_its_working_resolution(tmp_path):
+    """Photo cleanup must bound the pixel count it works at.
+
+    A phone photo is 12 megapixels; every stage from here on scales with
+    that, so photo mode shrinks the image to a stated cap first (see
+    ``_PHOTO_MAX_SHORT_SIDE_PX``). This pins the mechanism rather than a
+    wall-clock time, which would be a flaky thing to assert.
+    """
+    oversized = _PHOTO_MAX_SHORT_SIDE_PX + 600
+    path, _ = _filled_shape_photo(
+        tmp_path, name="oversized.png", size=(oversized, oversized * 4 // 3)
+    )
+    gray = np.array(Image.open(path).convert("L"))
+
+    cleaned = _flatten_photo(gray, path)
+
+    assert min(cleaned.shape) <= _PHOTO_MAX_SHORT_SIDE_PX
+    # Shrunk, not cropped or squashed: 3:4 in, 3:4 out.
+    height, width = cleaned.shape
+    assert width / height == pytest.approx(3 / 4, abs=0.01)
+
+
+def test_flatten_photo_leaves_a_small_image_at_its_own_size(tmp_path):
+    """The cap only ever shrinks: artwork already under it is worked on at
+    the resolution it came in at, not resampled for the sake of it."""
+    path, _ = _photo_drawing(tmp_path, size=(360, 360))
+    gray = np.array(Image.open(path).convert("L"))
+
+    assert _flatten_photo(gray, path).shape == gray.shape
+
+
+def test_flatten_photo_rejects_a_mask_with_no_real_contrast():
+    """An all-dark (or otherwise structureless) cleanup must fail loudly,
+    not silently hand back a mask that is really just noise."""
+    uniform = np.full((200, 200), 200, dtype=np.uint8)
+    with pytest.raises(TraceError):
+        _flatten_photo(uniform, Path("uniform.png"))
+
+
+def test_flatten_photo_rejects_an_all_dark_image():
+    """Nothing to distinguish as "ink" when every pixel is already dark --
+    must not be reported as a successful, all-foreground segmentation."""
+    all_dark = np.full((200, 200), 10, dtype=np.uint8)
+    with pytest.raises(TraceError):
+        _flatten_photo(all_dark, Path("dark.png"))
+
+
+def test_photo_mode_traces_a_lit_and_shadowed_drawing(tmp_path):
+    path, _ = _photo_drawing(tmp_path)
+    result = trace_image(path, SIZE_MM, photo=True)
+
+    assert not result.silhouette.is_empty
+    assert result.silhouette.area > 0
+    # A photographed pencil/marker drawing is one shade of ink: cleanup
+    # collapses it to bilevel, so the existing "one dark shape, no separate
+    # detail layer" path fires -- expected, not a bug (see trace_image's
+    # own docstring for ``photo``).
+    assert result.detail.is_empty
+    assert result.warnings
+    assert "single-colour" in result.warnings[0]
+
+
+def test_photo_flag_is_required_to_flatten_the_lighting(tmp_path):
+    """--photo is strictly opt-in: the same file traced without it must not
+    quietly get the same cleanup applied under the hood."""
+    path, _ = _photo_drawing(tmp_path)
+
+    flattened_result = trace_image(path, SIZE_MM, photo=True)
+    assert not flattened_result.silhouette.is_empty
+
+    # Without flattening, the illumination gradient itself crosses the
+    # silhouette threshold and shreds the outline into a mess of hairline
+    # slivers -- proof the default code path is genuinely untouched by the
+    # new cleanup, not quietly also-flattened under the hood.
+    with pytest.raises(ThinFeatureError):
+        trace_image(path, SIZE_MM, photo=False, detail=False)
+
+
+def test_photo_false_matches_not_passing_photo_at_all(bold_logo):
+    default = trace_image(bold_logo, SIZE_MM)
+    explicit_off = trace_image(bold_logo, SIZE_MM, photo=False)
+
+    assert default.silhouette.equals(explicit_off.silhouette)
+    assert default.detail.equals(explicit_off.detail)
+    assert default.warnings == explicit_off.warnings
+
+
+def test_photo_mode_reports_no_strokes_found_in_the_error_style(tmp_path):
+    w, h = 300, 300
+    yy, xx = np.mgrid[0:h, 0:w]
+    gradient = (230 - 60 * (xx / w) - 30 * (yy / h)).astype(np.uint8)
+    path = _save(
+        Image.fromarray(gradient, mode="L"), tmp_path, "blank_photo.png"
+    )
+
+    with pytest.raises(TraceError) as excinfo:
+        trace_image(path, SIZE_MM, photo=True)
+    message = str(excinfo.value).lower()
+    # Plain-language, actionable, matching the rest of this module's voice.
+    assert "brighter" in message
+    assert "pen" in message or "pencil" in message
+
+
+def test_photo_mode_ignores_alpha_even_when_present(tmp_path):
+    """A photographed drawing has no meaningful transparency: photo=True
+    must not switch over to the alpha channel just because the file
+    happens to carry one."""
+    w, h = 320, 320
+    yy, xx = np.mgrid[0:h, 0:w]
+    gradient = (235 - 60 * (xx / w) - 30 * (yy / h)).astype(np.uint8)
+    image = Image.fromarray(gradient, mode="L").convert("RGBA")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse([80, 80, 240, 240], outline=(20, 20, 20, 255), width=14)
+    # A meaningfully transparent corner: if alpha were consulted (as it
+    # would be for a non-photo input, see _MIN_TRANSPARENT_FRACTION) this
+    # would read as "mostly background" and starve the silhouette.
+    for x in range(30):
+        for y in range(30):
+            image.putpixel((x, y), (255, 255, 255, 0))
+    path = _save(image, tmp_path, "photo_with_alpha.png")
+
+    result = trace_image(path, SIZE_MM, photo=True, detail=False)
+    assert not result.silhouette.is_empty
+    assert result.silhouette.area > 0
 
 
 # --- input handling --------------------------------------------------------
