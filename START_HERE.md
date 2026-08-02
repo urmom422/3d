@@ -25,7 +25,38 @@ someday it'll build more.
 
 ## Make your first keychain
 
-### Step 1: Draw something and take a photo
+There are two ways to build one, and they are equally real ways. Pick
+whichever fits today: one of them needs a helper nearby, the other needs
+a terminal.
+
+### Making one with a helper
+
+If you've got a helper — a grown-up, or an AI assistant (like Claude)
+that can work in this repo for you — they can drive the computer while
+you bring the drawing.
+
+1. Draw something and take a photo of it. (The photo tips under "Making
+   one yourself" below still apply: lay it flat, shoot straight-on, use
+   good light, fill the frame.)
+2. Get the photo onto the computer your helper is working on — Step 2
+   under "Making one yourself" lists a few ways to do that — and tell
+   them you'd like a keychain made from it.
+3. Your helper will ask you a few quick questions — like whether you want
+   one color or two — and then run the pipeline for you.
+4. Your helper reads the quality report and tells you, in plain words,
+   whether your keychain turned out **print-ready**, and if it didn't,
+   what to try next.
+
+The one thing this path needs is a helper who's actually free to sit
+with you.
+
+### Making one yourself
+
+You can build the whole thing yourself from a terminal, whenever you
+feel like it — nobody else has to be free. It's six steps, and every one
+of them is something you run by hand: no assistant needed, ever.
+
+#### Step 1: Draw something and take a photo
 
 Draw a simple picture on plain paper — a shape with a clear, bold outline
 works best (a star, an animal, your initial, whatever you like). Thin,
@@ -44,14 +75,14 @@ huge difference:
 - **Fill the frame** with the paper so the drawing is easy to see, and
   make sure the photo is in focus.
 
-### Step 2: Get the photo onto the computer
+#### Step 2: Get the photo onto the computer
 
 Get the photo file (a `.jpg` or `.png`) from your phone onto the computer
 you're using — for example by AirDropping it, emailing it to yourself, or
 plugging your phone in and copying the file over. Remember where you
 saved it; you'll need that file's path in Step 3.
 
-### Step 3: Set up the project (only needed the first time)
+#### Step 3: Set up the project (only needed the first time)
 
 Open a terminal in this repo's folder and run:
 
@@ -62,7 +93,7 @@ uv sync
 This downloads everything the pipeline needs to run. You only have to do
 it once (or again later if the project's dependencies change).
 
-### Step 4: Build the keychain
+#### Step 4: Build the keychain
 
 Now run the actual command, pointing it at your photo:
 
@@ -88,7 +119,7 @@ The command will print out what it's doing, and — if all goes well — a
 quality report (a file called `report.md`, inside your drawing's own
 folder under `designs/`).
 
-### Step 5: See what you got
+#### Step 5: See what you got
 
 The command created a new folder under `designs/` (named after your
 drawing) containing:
@@ -103,7 +134,7 @@ Open `report.md` and check the **Verdict** at the top. If it says
 `print-ready`, you're good to print! If it says something else, see the
 "When something goes wrong" section below.
 
-### Step 6: Print it
+#### Step 6: Print it
 
 1. Open the `.3mf` file in **Bambu Studio**.
 2. If your keychain has two colors, map its two parts (`base` and
@@ -157,15 +188,15 @@ just crashing. Here's what the most common messages mean and what to do.
 
 | What you'll see (roughly) | What it means | What to do |
 |---|---|---|
-| `No artwork found in ...: every pixel looks like background` | The computer couldn't find your drawing in the photo at all. | Retake the photo with better lighting and more contrast between the drawing and the paper. |
-| `Everything in ... was removed as speckle` | Your drawing's marks were treated as tiny dust specks and thrown out. | Draw bigger/bolder marks, or scan/photograph at a higher resolution. |
-| `The outline of your image has parts thinner than ... Try a larger --size ...` | Some part of your outline is too thin to print at this size — but printing it bigger would fix it. | The message tells you what size would work: run the command again with `--size` set to that number, or make your lines bolder. |
-| `The outline of your image has parts thinner than ... no --size clears them ... Use a bolder image with thicker strokes.` | Some lines are so thin compared to the rest of the drawing that no size will save them. | Making it bigger won't help this time — go over the thin lines with a bolder pen or marker, then retake the photo. |
-| `This artwork traces to N disconnected islands` | Your drawing has separate floating pieces that don't touch, so a printed keychain would fall apart. | Connect the pieces in your drawing (e.g. add a line joining them), then retake the photo. |
-| `A ... mm hole with ... mm of material all round needs a solid disc ...` (a hole-margin message) | There's no spot on your drawing thick enough to safely hold the keyring hole. | Draw a slightly bigger/thicker area near the top of your shape, or make the whole drawing bigger. |
-| `The whole image is one dark shape ... so there is no separate detail layer` | Your drawing is one solid color throughout, so it will print in a single color instead of two. | This is fine if you wanted one color! If you wanted two, add lighter and darker areas to your drawing. |
-| `No detail regions were found, so the design will be a single-colour silhouette` | Same idea — no inner details were found, so it's printing single-color. | Add darker marks *inside* the outline if you want a second color there. |
-| `--detail ... was requested, but the traced image has no detail layer to work with` | You asked for a two-color design, but there wasn't one to find. | Same fix as above — add clear inner details to your drawing. |
+| `No artwork found in ...: every pixel looks like background` | The computer couldn't find your drawing in the photo at all. | Ask your helper to take a look — they can usually tell what went wrong. Or retake the photo yourself with better lighting and more contrast between the drawing and the paper. |
+| `Everything in ... was removed as speckle` | Your drawing's marks were treated as tiny dust specks and thrown out. | Show it to your helper and they can suggest what to change. Or draw bigger, bolder marks yourself, or scan/photograph at a higher resolution. |
+| `The outline of your image has parts thinner than ... Try a larger --size ...` | Some part of your outline is too thin to print at this size — but printing it bigger would fix it. | Your helper can work out a good size and run it again for you. Or do it yourself: run the command again with `--size` set to the number the message gives you, or make your lines bolder. |
+| `The outline of your image has parts thinner than ... no --size clears them ... Use a bolder image with thicker strokes.` | Some lines are so thin compared to the rest of the drawing that no size will save them. | Ask your helper what would help most here. Or go over the thin lines yourself with a bolder pen or marker, then retake the photo — making it bigger won't help this time. |
+| `This artwork traces to N disconnected islands` | Your drawing has separate floating pieces that don't touch, so a printed keychain would fall apart. | Your helper can point out where the pieces come apart. Or spot them yourself and connect them in your drawing (e.g. add a line joining them), then retake the photo. |
+| `A ... mm hole with ... mm of material all round needs a solid disc ...` (a hole-margin message) | There's no spot on your drawing thick enough to safely hold the keyring hole. | Ask your helper where there's room for the hole. Or draw a slightly bigger, thicker area near the top of your shape yourself, or make the whole drawing bigger. |
+| `The whole image is one dark shape ... so there is no separate detail layer` | Your drawing is one solid color throughout, so it will print in a single color instead of two. | This is fine if you wanted one color! If you wanted two, your helper can suggest where to add them — or add lighter and darker areas to your drawing yourself. |
+| `No detail regions were found, so the design will be a single-colour silhouette` | Same idea — no inner details were found, so it's printing single-color. | Your helper can tell you what would show up as a second color. Or add darker marks yourself *inside* the outline if you want one there. |
+| `--detail ... was requested, but the traced image has no detail layer to work with` | You asked for a two-color design, but there wasn't one to find. | Ask your helper to check whether there's any detail there to find. Or add clear inner details to your drawing yourself, same as above. |
 | `OrcaSlicer was not found ...` (report says `passes-level-1`, not `print-ready`) | The final print-check step (the slicer) isn't installed on this computer, so the design can't officially be called print-ready yet. | Ask a grown-up to install OrcaSlicer, or set the `ORCASLICER_EXE` setting to point at it, then run the command again. |
 | `No such image: ...` | The file path you typed doesn't point at a real file. | Double check the spelling and location of your photo's path. |
 
