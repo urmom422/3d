@@ -6,10 +6,27 @@ description: Convert a 2D image into a print-ready 3D model via a user interview
 # make-3d
 
 Front door for turning one source image into a print-ready design under
-`designs/<slug>/`. Run this as an interview: one question at a time, each
-with a recommended default the user can accept with a plain "yes" or by
+`designs/<slug>/`. This is the ordinary way the pipeline is driven —
+not one optional wrapper among several — though the scripts underneath
+stay fully runnable on their own, with or without an assistant. See
+`CLAUDE.md`'s "The seam — capability vs judgment" section for where
+this skill's judgment ends and the scripts' capability begins.
+
+Run this as an interview: one question at a time, each with a
+recommended default the user can accept with a plain "yes" or by
 overriding it. **Never invent a spec value the user didn't confirm** —
 every value below must be offered and accepted, not assumed silently.
+
+The same discipline extends to artwork, as a standing rule: **never
+alter someone's drawing without showing what changed and getting a yes.**
+Today nothing in the pipeline can alter artwork, and neither may you:
+there is no repair stage yet, the source image is copied into the
+design folder untouched, and editing it yourself would mean holding
+behaviour the scripts don't have. The rule is written down now so it
+governs the repair stage from its first day, and whatever lands, the
+original is always preserved alongside any repaired version. Tracing
+options such as `--photo` change only how an image is *read*, never the
+stored drawing, so they fall outside this rule.
 
 ## 1. Interview
 
