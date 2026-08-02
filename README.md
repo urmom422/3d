@@ -16,8 +16,10 @@ interview and drives the pipeline. The scripts underneath are the whole
 pipeline and stay fully runnable on their own, with or without an
 assistant — see Quick start below for the direct path.
 
-**New here?** Start with [`START_HERE.md`](START_HERE.md) for a
-step-by-step, kid-friendly walkthrough of building your first keychain.
+**New here?** Start with [`START_HERE.md`](START_HERE.md) — a kid-friendly
+walkthrough of building your first keychain, opening with two ways in at
+equal billing: making one with a helper, or making one yourself from the
+terminal.
 
 ## The seam — capability vs judgment
 
