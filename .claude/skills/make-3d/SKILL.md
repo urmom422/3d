@@ -52,13 +52,20 @@ in `uv run make3d --help`:
 
 ```
 uv run make3d <image> --type keychain --size <N> --thickness <N> \
-  --detail raised|recessed|none [--hole-position <X> <Y>] --name <name>
+  --detail raised|recessed|none [--hole-position <X> <Y>] --name <name> \
+  [--photo]
 ```
 
 - `--hole-diameter` only if the user asked to override the 5.2mm default
   (not part of the standard interview above).
 - `--hole-position X Y` only if "explicit" was chosen in step 7; omit for
   "auto".
+- `--photo` — opt-in, off by default; not part of the standard interview
+  above. Add it when the source image is a phone photo of a paper
+  drawing rather than flat digital artwork: it evens out lighting and
+  shadows first, then treats pencil/marker strokes as ink and the paper
+  as background. Ask the user whether the source image is a photo of a
+  drawing before deciding, rather than assuming.
 - `--name` is the design name from step 2, as typed — the CLI slugifies
   it into the folder name. Don't reconstruct the slug yourself; read it
   off the CLI's own `report: <path>` line (or see step 3 if the run

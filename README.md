@@ -10,6 +10,9 @@ optional detail layer), cleans it up, builds a 3D solid (base + raised or
 recessed detail, keyring hole, chamfer), and exports a multi-object 3MF
 (for AMS two-color printing) plus an STL.
 
+**New here?** Start with [`START_HERE.md`](START_HERE.md) for a
+step-by-step, kid-friendly walkthrough of building your first keychain.
+
 ## Quick start
 
 ```
