@@ -1,19 +1,40 @@
 # 3d — print3d
 
-`print3d` is a free-software pipeline that turns a 2D image into a
-print-ready 3D model for a Bambu Lab A1 Mini (0.4mm nozzle, PLA, AMS Lite
-4-slot). v1 supports one object type: **keychains**. Every tool in the
-pipeline is free/open-source software — no paid tools or APIs.
+`print3d` is a free-software pipeline: an AI-assisted workflow over a
+deterministic core. It turns a 2D image into a print-ready 3D model for
+a Bambu Lab A1 Mini (0.4mm nozzle, PLA, AMS Lite 4-slot). v1 supports
+one object type: **keychains**. Every tool in the pipeline is
+free/open-source software — no paid tools or APIs.
 
 The pipeline traces the source image to vector geometry (silhouette +
 optional detail layer), cleans it up, builds a 3D solid (base + raised or
 recessed detail, keyring hole, chamfer), and exports a multi-object 3MF
 (for AMS two-color printing) plus an STL.
 
+The ordinary way to run it is the `/make-3d` skill: an assistant runs the
+interview and drives the pipeline. The scripts underneath are the whole
+pipeline and stay fully runnable on their own, with or without an
+assistant — see Quick start below for the direct path.
+
 **New here?** Start with [`START_HERE.md`](START_HERE.md) for a
 step-by-step, kid-friendly walkthrough of building your first keychain.
 
+## The seam — capability vs judgment
+
+The boundary between the assistant and the scripts is fixed, and it runs
+through judgment, not capability:
+
+- **Scripts own every capability, end to end** — trace, build, quality
+  gate, slice. All of it stays runnable headless, without an assistant,
+  and is covered by tests. This is a hard constraint, not an aspiration.
+- **The assistant owns judgment** — interview, interpretation,
+  recommendation, and consent. It never holds behaviour the scripts lack.
+
+Rule of thumb: *capability → scripts; judgment → the skill.*
+
 ## Quick start
+
+The direct, scripted path — no assistant involved:
 
 ```
 uv sync
@@ -68,4 +89,4 @@ gitignored — they're regenerable and printer-run-specific.
 - `profiles/` — slicer profiles
 - `tests/` — test suite
 
-See `CLAUDE.md` for session rules when working in this repo with an agent.
+See `CLAUDE.md` for session rules.
